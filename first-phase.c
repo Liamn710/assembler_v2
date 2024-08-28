@@ -2,75 +2,132 @@
 #include <string.h>
 #include <stdlib.h>
 
+typedef int bool;
+#define true 1
+#define false 0
+
 typedef struct {
     char label[50];
     int address;
-} SymbolTableEntry;
+} LabelEntry;
 
-SymbolTableEntry symbolTable[100];
-int symbolCount = 0;
+LabelEntry labelsTable[100];
+int labelsCount = 0;
 int currentAddress = 0;
+
+bool isLabelLine(char *line) {
+    int i;
+    for (i=0; line[i] != '\0'; i++) {
+        if (line[i] == ':') {
+            return true;
+        }
+    }
+    return false;
+}
+
+int getEndIndexOfLabel(char *line) {
+    int i;
+
+    while (line[i] != '\0') {
+        if (line[i] == ':') {
+            return i;
+        }
+        i++;
+    }
+
+    return -1;
+}
+
+char* getLabel(char *line, int endIndex) {
+    int i;
+    char *label = malloc(endIndex+1);
+
+    for (i=0; i < endIndex; i++) {
+        label[i] = line[i];
+    }
+
+    return label;
+}
+
+char *copy(char *destination, const char *source) {
+    char *start = destination;
+
+    while (*source != '\0') {
+        *destination = *source;
+        destination++;
+        source++;
+    }
+
+    *destination = '\0';
+
+    return start;
+}
 
 void addLabel(char *label) {
     int i;
-    for (i = 0; i < symbolCount; i++) {
-        if (strcmp(symbolTable[i].label, label) == 0) {
+    for (i = 0; i < labelsCount; i++) {
+        if (strcmp(labelsTable[i].label, label) == 0) {
             printf("Error: Duplicate label found: %s\n", label);
             return;
         }
     }
-    strcpy(symbolTable[symbolCount].label, label);
-    symbolTable[symbolCount].address = currentAddress;
-    symbolCount++;
+    copy(labelsTable[labelsCount].label, label);
+    labelsTable[labelsCount].address = currentAddress;
+    labelsCount++;
 }
 
 void processLine(char *line) {
-    int j;
-    int s;
+    int endIndexOfLabel;
     char *label;
-    for (j=0; line[j] != '\0'; j++) {
-        if (line[j] == ':') {
-            label = malloc(j+1);
-            for (s=0; s < j; s++) {
-                label[s] = line[s];
-            }
-        }
+    
+    if (isLabelLine(line) == true) {
+        endIndexOfLabel = getEndIndexOfLabel(line);
+        label = getLabel(line, endIndexOfLabel);
+        addLabel(label);
     }
-
-    for (s=0; s < 100; s++) {
-        if (symbolTable[s].label != NULL) {
-            printf("%s\n", symbolTable[s].label);
-        }
-    }
-    addLabel(label);
-    label[0] = '\0';
 
     currentAddress++;
 }
 
+void executeFirstPhase(char **lines) {
+    int currentLine;
+    int i;
+    
+    for (currentLine = 0; lines[currentLine] != NULL; currentLine++) {
+        processLine(lines[currentLine]);
+    }
+
+    printf("Labels Table:\n");
+    for (i = 0; i < labelsCount; i++) {
+        printf("label: %s, address: %d\n", labelsTable[i].label, labelsTable[i].address);
+    }
+}
 
 int main(void) {
-    int i;
     char *lines[] = {
-        "START: MOV A, B\0",
-        "        ADD A, 1\0",
-        "LOOP:   SUB A, 1\0",
-        "        JNZ LOOP\0",
-        "        HLT\0",
+        "MAIN: add r3, LIST\0",
+        "LOOP: prn #48\0",
+        "lea STR, r6\0",
+        "inc r6\0",
+        "mov *r6,K\0",
+        "sub r1, r4\0",
+        "cmp r3, #-6\0",
+        "bne END\0",
+        "dec K\0",
+        "jmp LOOP\0",
+        "END: stop\0",
+        "STR: .string “abcd”\0",
+        "\0",
+        "\0",
+        "\0",
+        "\0",
+        "LIST: .data 6, -9\0",
+        ".data -100\0",
+        "K: .data 31\0",
         NULL
     };
-
-    printf("hi");
     
-    for (i = 0; lines[i] != NULL; i++) {
-        processLine(lines[i]);
-    }
-
-    printf("Symbol Table:\n");
-    for (i = 0; i < symbolCount; i++) {
-        printf("%s: %d\n", symbolTable[i].label, symbolTable[i].address);
-    }
+    executeFirstPhase(lines);
 
     return 0;
 }
-
