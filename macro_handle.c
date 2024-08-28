@@ -1,33 +1,62 @@
-#include <stdio.h>
+#include "macro_handle.h"
 #include <stdlib.h>
 #include <string.h>
-
-#define MAX_LINE_LENGTH 81  /* 80 characters + null terminator */
-
-/* Structure to store a single line of a macro */
-typedef struct MacroLine {
-    char *content;
-    struct MacroLine *next;
-} MacroLine;
-
-/* Structure to store macro information */
-typedef struct Macro {
-    char *name;
-    MacroLine *lines;
-    struct Macro *next;
-} Macro;
-
-/* Function prototypes */
-void preprocess_assembly(const char* input_filename, const char* output_filename);
-void expand_macros(FILE* input, FILE* output);
-Macro* define_macro(FILE* input, const char* macro_line);
-void expand_macro(FILE* output, Macro* macro);
-void free_macros(Macro* macro_list);
-char* my_strdup(const char* s);
 
 /* Global variables */
 Macro* macro_list = NULL;
 
+/* List of reserved words (opcodes, instructions, etc.) */
+const char* reserved_words[] = {
+    "MOV", "ADD", "SUB", "MUL", "DIV", "AND", "OR", "XOR", "NOT",
+    "JMP", "JE", "JNE", "JG", "JGE", "JL", "JLE",
+    "PUSH", "POP", "CALL", "RET",
+    /* Add more reserved words as needed */
+    NULL  /* Sentinel value to mark the end of the array */
+};
+
+/* Function to check if a string is a valid identifier */
+int is_valid_identifier(const char* name) {
+    const char* p;
+    
+    if (name == NULL || *name == '\0' || strlen(name) > MAX_IDENTIFIER_LENGTH) {
+        return 0;  /* False */
+    }
+    
+    if (!isalpha((unsigned char)*name) && *name != '_') {
+        return 0;  /* First character must be a letter or underscore */
+    }
+    
+    for (p = name + 1; *p != '\0'; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '_') {
+            return 0;  /* Subsequent characters must be alphanumeric or underscore */
+        }
+    }
+    
+    return 1;  /* True */
+}
+
+/* Function to check if a string is a reserved word */
+int is_reserved_word(const char* name) {
+    int i;
+    for (i = 0; reserved_words[i] != NULL; i++) {
+        if (strcmp(name, reserved_words[i]) == 0) {
+            return 1;  /* True */
+        }
+    }
+    return 0;  /* False */
+}
+
+/* Function to check if a macro name already exists */
+int macro_exists(const char* name) {
+    Macro* current = macro_list;
+    while (current) {
+        if (strcmp(current->name, name) == 0) {
+            return 1;  /* True */
+        }
+        current = current->next;
+    }
+    return 0;  /* False */
+}
 /* Main preprocessing function */
 void preprocess_assembly(const char* input_filename, const char* output_filename) {
     FILE* input;
@@ -56,6 +85,7 @@ void expand_macros(FILE* input, FILE* output) {
     int is_macro;
     Macro* current;
     Macro* new_macro;
+    char macro_name[MAX_LINE_LENGTH];
     
     while (fgets(line, sizeof(line), input) != NULL) {
         /* Remove newline character if present */
@@ -64,7 +94,7 @@ void expand_macros(FILE* input, FILE* output) {
             line[len-1] = '\0';
         }
         
-        if (strncmp(line, "m_macr", 6) == 0) {
+        if (strncmp(line, "macr", 4) == 0) {
             /* Define a new macro */
             new_macro = define_macro(input, line);
             if (new_macro) {
@@ -76,7 +106,7 @@ void expand_macros(FILE* input, FILE* output) {
             is_macro = 0;
             current = macro_list;
             while (current) {
-                if (strcmp(line, current->name) == 0) {
+                if (sscanf(line, "%s", macro_name) == 1 && strcmp(macro_name, current->name) == 0) {
                     expand_macro(output, current);
                     is_macro = 1;
                     break;
@@ -94,15 +124,32 @@ void expand_macros(FILE* input, FILE* output) {
 
 /* Function to define a new macro */
 Macro* define_macro(FILE* input, const char* macro_line) {
-    char macro_name[MAX_LINE_LENGTH];
+    char macro_name[MAX_IDENTIFIER_LENGTH + 1];
     Macro* macro;
     MacroLine* last_line = NULL;
     char line[MAX_LINE_LENGTH];
     size_t len;
     MacroLine* new_line;
 
-    if (sscanf(macro_line, "m_macr %s", macro_name) != 1) {
-        printf("Error: Invalid macro declaration format.\n");
+    /* Check for exact "macr NAME" format */
+    if (sscanf(macro_line, "macr %s%*[^\n]", macro_name) != 1) {
+        printf("Error: Invalid macro declaration format. Use 'macr NAME' without any extra text.\n");
+        return NULL;
+    }
+
+    /* Validate macro name */
+    if (!is_valid_identifier(macro_name)) {
+        printf("Error: Invalid macro name '%s'. Must be a valid identifier.\n", macro_name);
+        return NULL;
+    }
+
+    if (is_reserved_word(macro_name)) {
+        printf("Error: Macro name '%s' is a reserved word.\n", macro_name);
+        return NULL;
+    }
+
+    if (macro_exists(macro_name)) {
+        printf("Error: Macro '%s' is already defined.\n", macro_name);
         return NULL;
     }
     
@@ -123,33 +170,40 @@ Macro* define_macro(FILE* input, const char* macro_line) {
             line[len-1] = '\0';
         }
         
-        if (strcmp(line, "endmacr") == 0) {
-            return macro;  /* Macro definition complete */
-        }
-        
-        new_line = (MacroLine*)malloc(sizeof(MacroLine));
-        if (new_line == NULL) {
-            printf("Error: Memory allocation failed.\n");
-            free_macros(macro);
-            return NULL;
-        }
+        /* Trim leading whitespace */
+        {
+            char* trimmed_line = line;
+            while (*trimmed_line == ' ' || *trimmed_line == '\t') {
+                trimmed_line++;
+            }
+            
+            if (strcmp(trimmed_line, "endmacr") == 0) {
+                return macro;  /* Macro definition complete */
+            }
+            
+            new_line = (MacroLine*)malloc(sizeof(MacroLine));
+            if (new_line == NULL) {
+                printf("Error: Memory allocation failed.\n");
+                free_macros(macro);
+                return NULL;
+            }
 
-        new_line->content = my_strdup(line);
-        new_line->next = NULL;
-        
-        if (last_line == NULL) {
-            macro->lines = new_line;
-        } else {
-            last_line->next = new_line;
+            new_line->content = my_strdup(trimmed_line);
+            new_line->next = NULL;
+            
+            if (last_line == NULL) {
+                macro->lines = new_line;
+            } else {
+                last_line->next = new_line;
+            }
+            last_line = new_line;
         }
-        last_line = new_line;
     }
     
     printf("Error: Unexpected end of file while defining macro '%s'.\n", macro->name);
     free_macros(macro);
     return NULL;
 }
-
 /* Function to expand a macro */
 void expand_macro(FILE* output, Macro* macro) {
     MacroLine* current = macro->lines;

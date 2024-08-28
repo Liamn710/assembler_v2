@@ -1,11 +1,9 @@
-
-section .data
-    hello_msg db 'Hello, World!$'
-
 section .text
     global _start
-
 _start:
-    PRINT_HELLO
+MOV AX, 0900h
+MOV DX, OFFSET hello_msg
+INT 21h
     MOV AH, 4Ch
     INT 21h
+second macro
