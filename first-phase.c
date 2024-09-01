@@ -1,109 +1,182 @@
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>
+#include <ctype.h>
 
-typedef int bool;
-#define true 1
-#define false 0
+#define MAX_LABELS 100 /* todo - maybe explicit size? */
+#define MAX_LABEL_LEN 50 /* todo - maybe explicit size? */
+#define START_ADDRESS 100
 
 typedef struct {
-    char label[50];
+    char *name;
+    int numOfCells;
+} Command;
+
+Command commands[] = {
+        {"mov",  3},
+        {"cmp",  3},
+        {"add",  3},
+        {"sub",  2},
+        {"lea",  3},
+        {"clr",  2},
+        {"not",  2},
+        {"inc",  2},
+        {"dec",  2},
+        {"jmp",  2},
+        {"bne",  2},
+        {"red",  2},
+        {"prn",  2},
+        {"jsr",  2},
+        {"rts",  1},
+        {"stop", 1}
+};
+
+typedef struct {
+    char name[MAX_LABEL_LEN]; /* todo - maybe explicit size? */
     int address;
-} LabelEntry;
+} labelEntry;
 
-LabelEntry labelsTable[100];
+labelEntry labelsTable[MAX_LABELS]; /* todo - maybe explicit size? */
 int labelsCount = 0;
-int currentAddress = 0;
+int IC = START_ADDRESS;
+int DC = 0;
 
-bool isLabelLine(char *line) {
-    int i;
-    for (i=0; line[i] != '\0'; i++) {
-        if (line[i] == ':') {
-            return true;
-        }
+void addLabel(char* label, int address) {
+    if (labelsCount >= MAX_LABELS) {
+        printf("Error: Too many labels\n"); /* todo - error handling */
+        return;
     }
-    return false;
+    strcpy(labelsTable[labelsCount].name, label);
+    labelsTable[labelsCount].address = address;
+    labelsCount++;
 }
 
-int getEndIndexOfLabel(char *line) {
-    int i;
+int parseLabelUsingStrstr(char* line, char* label) {
+    char* colonPos = strstr(line, ":");
+    
+    if (colonPos) {
+        int labelLength = colonPos - line;
+        if (labelLength <= MAX_LABEL_LEN) {
+            strncpy(label, line, labelLength);
+            label[labelLength] = '\0';
+            return 1;
+        } else {
+            printf("Error: Label too long\n"); /* todo - error handling */
+        }
+    }
+
+    return 0;
+}
+
+int calculateDataCells(char* line) {
+    int i = 0;
+    int cells = 0;
+    
+    while (line[i] != '\0') {
+        while (isspace(line[i]) || line[i] == ',') {
+            i++;
+        }
+        if (line[i] == '-' || isdigit(line[i])) {
+            cells++;
+
+            while (line[i] != '\0' && line[i] != ',' && !isspace(line[i])) {
+                i++;
+            }
+        }
+    }
+
+    return cells;
+}
+
+int calculateStringCells(char* line) {
+    int i = 0;
+    int cells = 0;
+    int inString = 0;
 
     while (line[i] != '\0') {
-        if (line[i] == ':') {
-            return i;
+        if (line[i] == '"') {
+            if (inString) {
+                inString = 0;
+                cells++;
+                break;
+            } else {
+                inString = 1;
+            }
+        } else if (inString) {
+            cells++;
         }
         i++;
     }
 
-    return -1;
+    return cells;
 }
 
-char* getLabel(char *line, int endIndex) {
+int getNumOfCellsFromCommand(char *commandName) {
     int i;
-    char *label = malloc(endIndex+1);
+    for (i = 0; i < sizeof(commands); i++) {
+            if (strcmp(commands[i].name, commandName) == 0) {
+                return commands[i].numOfCells;
+            }
+        }
+    return 0;
+}
 
-    for (i=0; i < endIndex; i++) {
-        label[i] = line[i];
+int calculateCommandCells(char* command) {
+    char* operandsStart = strchr(command, ' ');
+    char commandName[10] = {0};
+
+    if (operandsStart) {
+        strncpy(commandName, command, operandsStart - command);
+        return getNumOfCellsFromCommand(commandName);
     }
 
-    return label;
+    return 1;
 }
 
-char *copy(char *destination, const char *source) {
-    char *start = destination;
+void processLine(char* line) {
+    char label[MAX_LABEL_LEN + 1] = {0};
+    
+    if (parseLabelUsingStrstr(line, label)) {
+        char* commandStart = strstr(line, ":") + 1;
+        while (isspace(*commandStart)) {
+            commandStart++;
+        }
 
-    while (*source != '\0') {
-        *destination = *source;
-        destination++;
-        source++;
-    }
-
-    *destination = '\0';
-
-    return start;
-}
-
-void addLabel(char *label) {
-    int i;
-    for (i = 0; i < labelsCount; i++) {
-        if (strcmp(labelsTable[i].label, label) == 0) {
-            printf("Error: Duplicate label found: %s\n", label);
-            return;
+        if (strncmp(commandStart, ".data", 5) == 0) {
+            int cellsNeeded = calculateDataCells(commandStart + 5);
+            addLabel(label, IC + DC);
+            DC += cellsNeeded;
+        } else if (strncmp(commandStart, ".string", 7) == 0) {
+            int cellsNeeded = calculateStringCells(commandStart + 7);
+            addLabel(label, IC + DC);
+            DC += cellsNeeded;
+        } else {
+            int cellsNeeded = calculateCommandCells(commandStart);
+            addLabel(label, IC);
+            IC += cellsNeeded;
+        }
+    } else {
+        if (strncmp(line, ".data", 5) == 0) {
+            DC += calculateDataCells(line + 5);
+        } else if (strncmp(line, ".string", 7) == 0) {
+            DC += calculateStringCells(line + 7);
+        } else {
+            IC += calculateCommandCells(line);
         }
     }
-    copy(labelsTable[labelsCount].label, label);
-    labelsTable[labelsCount].address = currentAddress;
-    labelsCount++;
 }
 
-void processLine(char *line) {
-    int endIndexOfLabel;
-    char *label;
-    
-    if (isLabelLine(line) == true) {
-        endIndexOfLabel = getEndIndexOfLabel(line);
-        label = getLabel(line, endIndexOfLabel);
-        addLabel(label);
-    }
-
-    currentAddress++;
-}
 
 void executeFirstPhase(char **lines) {
-    int currentLine;
     int i;
-    
-    for (currentLine = 0; lines[currentLine] != NULL; currentLine++) {
-        processLine(lines[currentLine]);
-    }
-
-    printf("Labels Table:\n");
-    for (i = 0; i < labelsCount; i++) {
-        printf("label: %s, address: %d\n", labelsTable[i].label, labelsTable[i].address);
+    i = 0;
+    while (lines[i] != NULL) {
+        processLine(lines[i]);
+        i++;
     }
 }
 
 int main(void) {
+    int i;
     char *lines[] = {
         "MAIN: add r3, LIST\0",
         "LOOP: prn #48\0",
@@ -116,11 +189,7 @@ int main(void) {
         "dec K\0",
         "jmp LOOP\0",
         "END: stop\0",
-        "STR: .string “abcd”\0",
-        "\0",
-        "\0",
-        "\0",
-        "\0",
+        "STR: .string \"abcd\"\0",
         "LIST: .data 6, -9\0",
         ".data -100\0",
         "K: .data 31\0",
@@ -128,6 +197,10 @@ int main(void) {
     };
     
     executeFirstPhase(lines);
+
+    for (i = 0; i < labelsCount; i++) {
+        printf("Label: %s, Address: %d\n", labelsTable[i].name, labelsTable[i].address);
+    }
 
     return 0;
 }
