@@ -6,6 +6,8 @@
 #define START_ADDRESS 100
 #define MAX_LINE_LENGTH 100
 #define INITIAL_LINES 100
+#define MAX_OPCODE_LENGTH 5
+#define MAX_OPERAND_LENGTH 20
 
 struct opcode {
     char *name;         /* Opcode name */
@@ -15,13 +17,8 @@ extern struct opcode opcode_table[16];  /* Table of opcodes */
 extern char *instructions_table[];      /* List of assembler directives */
 extern char *registers[];               /* List of register names */
 
-typedef struct {
-    char name[MAX_LABEL_LEN]; /* todo - maybe explicit size? */
-    int address;
-} label_entry;
-
 /* Function prototypes for user's existing functions */
-int is_register(const char* operand);
-int is_opcode(const char* opcode);
+int is_opcode(char *str);
+int is_reg(char *str);
 
 #endif

@@ -23,6 +23,11 @@ char *instructions_table[] = {".data", ".string", ".extern", ".entry"};
 /* Contains the register names r0 through r7 */
 char *registers[] = {"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7"};
 
+typedef struct {
+    char name[MAX_LABEL_LEN]; /* todo - maybe explicit size? */
+    int address;
+} label_entry;
+
 label_entry labels_table[MAX_LABELS]; /* todo - maybe explicit size? */
 int labels_count = 0;
 int IC = START_ADDRESS;
@@ -249,9 +254,137 @@ void free_lines(char** lines) {
     }
     free(lines);
 }
+#include <stdint.h>
 
-/* Example usage */
+/* Function prototypes for user's existing functions */
+
+
+/* Function to determine the addressing method */
+unsigned int get_addressing_method(char* operand)
+{
+    /* No operand case */
+    if (operand == NULL || *operand == '\0')
+    {
+        return 0;
+    }
+    /* Immediate addressing */
+    if (operand[0] == '#')
+    {
+        return 1;
+    }
+    /* Register indirect addressing */
+    if (operand[0] == '*' && is_reg(operand + 1))
+    {
+        return 2;
+    }
+    /* Direct register addressing */
+    if (is_reg(operand))
+    {
+        return 4;
+    }
+    /* Direct addressing (label) */
+    return 8;
+}
+
+int is_opcode(char *str) {
+    int i;
+    if (str == NULL) {
+        return -1;  /* Return -1 if the input string is NULL */
+    }
+    for (i = 0; i < 16; i++) {  /* Iterate over the opcode table */
+        if (strcmp(str, opcode_table[i].name) == 0) {
+            return i;  /* Return the index if a match is found */
+        }
+    }
+    return -1;  /* Return -1 if no match is found */
+}
+
+int is_reg(char *str) {
+    int i;
+    if (str == NULL) {
+        return -1;  /* Return -1 if the input string is NULL */
+    }
+    for (i = 0; i < 8; i++) {  /* Iterate over the register array */
+        if (strcmp(str, registers[i]) == 0) {
+            return i;  /* Return the index if a match is found */
+        }
+    }
+    return -1;  /* Return -1 if no match is found */
+}
+
+/* Function to create the first word of the binary code */
+unsigned int create_first_word( char* opcode, char* first_operand, char* second_operand)
+{
+    unsigned int word = 0;
+    unsigned int op_code;
+    unsigned int first_addressing = 0;
+    unsigned int second_addressing = 0;
+
+    /* Get opcode (assuming is_opcode returns the numeric value of the opcode) */
+    op_code = is_opcode(opcode);
+
+    /* Set opcode (bits 14-11) */
+    word |= (op_code & 0xF) << 11;
+
+    /* Handle addressing methods */
+    if (first_operand != NULL)
+    {
+        first_addressing = get_addressing_method(first_operand);
+        if (second_operand != NULL)
+        {
+            /* Two operand instruction */
+            second_addressing = get_addressing_method(second_operand);
+            /* Set source operand addressing method (bits 10-7) */
+            word |= (first_addressing & 0xF) << 7;
+            /* Set target operand addressing method (bits 6-3) */
+            word |= (second_addressing & 0xF) << 3;
+        }
+        else
+        {
+            /* Single operand instruction */
+            /* Set target operand addressing method (bits 6-3) */
+            word |= (first_addressing & 0xF) << 3;
+        }
+    }
+
+    /* Set ARE field (bits 2-0) */
+    word |= 0x4; /* 100 in binary */
+
+    return word;
+}
+
+char* word_to_binary(int word) {
+    char* binary;
+    int i;
+    unsigned int mask;
+
+    /* Allocate memory for the binary string (15 bits + null terminator) */
+    binary = (char*)malloc(16 * sizeof(char));
+    if (binary == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return NULL;
+    }
+
+    /* Initialize the string with null terminator */
+    binary[15] = '\0';
+
+    /* Convert to 15-bit binary representation */
+    mask = 1 << 14;  /* Start with the 15th bit (remember, it's 0-indexed) */
+    for (i = 0; i < 15; i++) {
+        binary[i] = (word & mask) ? '1' : '0';
+        mask >>= 1;
+    }
+
+    return binary;
+}
+
+/* Function to free the memory allocated for the binary string */
+void free_binary(char* binary) {
+    free(binary);
+}
 int main() {
+    char* binary_repr;
+    unsigned int first_word;
     int num_lines;
     char** asm_lines;
     int i;
@@ -268,6 +401,11 @@ int main() {
         }
         free_lines(asm_lines);
     }
-
+    first_word = create_first_word("add", "r3", "#100");
+    binary_repr = word_to_binary(first_word);
+    if (binary_repr != NULL) {
+        printf("Binary representation: %s\n", binary_repr);
+        free_binary(binary_repr);
+    }
     return 0;
 }
