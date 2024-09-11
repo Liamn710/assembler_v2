@@ -1,53 +1,71 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include "first_pass.h"
+#include "second_pass.h"
+#include "macro_handle.h"
+#include "assembler.h"
 
-/* Function prototype for the preprocessor */
-void preprocess_assembly(const char* input_filename, const char* output_filename);
-char *my_strtok(char *str, const char *delim) {
-    static char *static_str = NULL;  
-    char *token;  
+#define MEMORY_SIZE 4096
+#define MAX_FILENAME 256
 
-    if (str != NULL) {
-        static_str = str;
-    }
 
-    if (static_str == NULL) {
-        return NULL;
-    }
-
-    static_str += strspn(static_str, delim);
-
-    if (*static_str == '\0') {
-        static_str = NULL;
-        return NULL;
-    }
-
-    token = static_str;
-    static_str = strpbrk(static_str, delim);
-
-    if (static_str != NULL) {
-        *static_str = '\0';
-        static_str++;
-    }
-
-    return token;
-}
 int main(int argc, char *argv[]) {
-    const char *input_filename;
-    const char *output_filename;
+    char input_filename[MAX_FILENAME];
+    char preprocessed_filename[MAX_FILENAME];
+    char output_filename[MAX_FILENAME];
+    char **lines;
+    int num_lines;
 
-    if (argc != 3) {
-        printf("Usage: %s <input_file> <output_file>\n", argv[0]);
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <filename without .as extension>\n", argv[0]);
         return 1;
     }
 
-    input_filename = argv[1];
-    output_filename = argv[2];
+    /* Construct input filename */
+    strcpy(input_filename, argv[1]);
+    strcat(input_filename, ".as");
+    
+    /* Construct preprocessed filename */
+    strcpy(preprocessed_filename, argv[1]);
+    strcat(preprocessed_filename, "_preprocessed.as");
 
-    printf("Preprocessing %s to %s\n", input_filename, output_filename);
-    preprocess_assembly(input_filename, output_filename);
+    /* Preprocess the assembly file */
+    preprocess_assembly(input_filename, preprocessed_filename);
 
-    printf("Preprocessing complete.\n");
+    /* Read preprocessed assembly file */
+    lines = read_asm_file(preprocessed_filename, &num_lines);
+    if (lines == NULL) {
+        fprintf(stderr, "Error reading preprocessed file %s\n", preprocessed_filename);
+        return 1;
+    }
+
+    /* Execute first and second pass */
+    execute_first_pass(lines);
+    execute_second_pass(lines);
+
+    /* Generate output files */
+    strcpy(output_filename, argv[1]);
+    strcat(output_filename, ".ob");
+    generate_ob_file(output_filename);
+
+    if (has_extern_instructions()) {
+        strcpy(output_filename, argv[1]);
+        strcat(output_filename, ".ext");
+        generate_externals_file(output_filename);
+    }
+
+    if (has_entry_instructions()) {
+        strcpy(output_filename, argv[1]);
+        strcat(output_filename, ".ent");
+        generate_entries_file(output_filename);
+    }
+
+    /* Free allocated memory */
+    free_lines(lines);
+
+    /* Remove the preprocessed file if you don't want to keep it */
+    remove(preprocessed_filename);
 
     return 0;
 }

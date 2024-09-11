@@ -8,9 +8,9 @@ Macro* macro_list = NULL;
 
 /* List of reserved words (opcodes, instructions, etc.) */
 const char* reserved_words[] = {
-    "MOV", "CMP", "ADD", "SUB", "LEA", "CLR", "NOT", "INC", "DEC",
-    "JMP", "BNE", "RED", "PRN", "JSR", "RTS", "STOP",
-    /* Add more reserved words as needed */
+    "mov", "cmp", "add", "sub", "lea", "clr", "not", "inc", "dec",
+    "jmp", "bne", "red", "prn", "jsr", "rts", "stop", "entry", "external", "data", "string",
+
     NULL  /* Sentinel value to mark the end of the array */
 };
 

@@ -32,11 +32,13 @@ int DC = 0;
 
 void add_label(char* label, int address) {
     if (labels_count >= MAX_LABELS) {
-        printf("Error: Too many labels\n"); /* todo - error handling */
+        fprintf(stderr, "Error: Too many labels\n");
         return;
     }
-    strcpy(labels_table[labels_count].name, label);
+    strncpy(labels_table[labels_count].name, label, MAX_LABEL_LEN - 1);
+    labels_table[labels_count].name[MAX_LABEL_LEN - 1] = '\0';
     labels_table[labels_count].address = address;
+    labels_table[labels_count].is_entry = 0;  /* Initialize is_entry to 0 */
     labels_count++;
 }
 
@@ -356,30 +358,28 @@ void free_lines(char** lines) {
 
 
 /* Function to determine the addressing method */
-unsigned int get_addressing_method(char* operand)
-{
-    /* No operand case */
-    if (operand == NULL || *operand == '\0')
-    {
+unsigned int get_addressing_method(char* operand) {
+    char trimmed_operand[MAX_OPERAND_LENGTH];
+
+    if (operand == NULL || *operand == '\0') {
         return 0;
     }
-    /* Immediate addressing */
-    if (operand[0] == '#')
-    {
-        return 1;
+
+    /* Trim the operand */
+    strncpy(trimmed_operand, operand, MAX_OPERAND_LENGTH - 1);
+    trimmed_operand[MAX_OPERAND_LENGTH - 1] = '\0';
+    trim(trimmed_operand);
+
+    if (trimmed_operand[0] == '#') {
+        return 1; /* Immediate addressing */
     }
-    /* Register indirect addressing */
-    if (operand[0] == '*' && is_reg(operand + 1) != -1)
-    {
-        return 2;
+    if (trimmed_operand[0] == '*') {
+        return 2; /* Register indirect addressing */
     }
-    /* Direct register addressing */
-    if (is_reg(operand) != -1)
-    {
-        return 4;
+    if (trimmed_operand[0] == 'r' && isdigit(trimmed_operand[1])) {
+        return 4; /* Direct register addressing */
     }
-    /* Direct addressing (label) */
-    return 8;
+    return 8; /* Direct addressing (label) */
 }
 
 int is_opcode(char *str) {
