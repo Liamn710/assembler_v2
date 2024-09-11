@@ -1,15 +1,15 @@
-macr PRINT_HELLO
-    MOV AX, 0900h
-    MOV DX, OFFSET hello_msg
-    INT 21h
-endmacr
-macr PRINT_SOMETHING
-    second macro
-endmacr
-section .text
-    global _start
-_start:
-    PRINT_HELLO
-    MOV AH, 4Ch
-    INT 21h
-    PRINT_SOMETHING
+.MAIN: add r3, LIST
+LOOP: prn #48
+lea STR, r6
+inc r6
+mov *r6,K
+sub r1, r4
+cmp r3, #-6
+bne END
+dec K 
+jmp LOOP
+END: stop
+STR: .string “abcd”
+LIST: .data 6, -9
+.data -100
+K: .data 31

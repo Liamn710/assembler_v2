@@ -23,15 +23,12 @@ char *instructions_table[] = {".data", ".string", ".extern", ".entry"};
 /* Contains the register names r0 through r7 */
 char *registers[] = {"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7"};
 
-typedef struct {
-    char name[MAX_LABEL_LEN]; /* todo - maybe explicit size? */
-    int address;
-} label_entry;
-
-label_entry labels_table[MAX_LABELS]; /* todo - maybe explicit size? */
+label_entry labels_table[MAX_LABELS];
 int labels_count = 0;
 int IC = START_ADDRESS;
 int DC = 0;
+
+
 
 void add_label(char* label, int address) {
     if (labels_count >= MAX_LABELS) {
@@ -159,19 +156,118 @@ void process_line(char* line) {
         }
     }
 }
+int is_empty_or_whitespace(const char* str) {
 
-
-void execute_first_pass(char **lines) {
-    int i;
-    i = 0;
-    while (lines[i] != NULL) {
-        process_line(lines[i]);
-        i++;
+    while (*str != '\0') {
+        if (!isspace((unsigned char)*str)) {
+            return 0;  /* Found a non-whitespace character */
+        }
+        str++;
     }
+    return 1;  /* String is empty or contains only whitespace */
 }
 
 
+void execute_first_pass(char **lines) {
+    char label[MAX_LABEL_LEN];
+    char opcode[MAX_OPCODE_LENGTH];
+    char operands[MAX_OPERAND_LENGTH];
+    unsigned int word;
+    char* binary_repr;
+    int i = 0;
 
+    while (lines[i] != NULL) {
+        if (is_empty_or_whitespace(lines[i])) {
+            i++;
+            continue;
+        }
+
+        parse_line(lines[i], label, opcode, operands);
+        
+        if (label[0] != '\0') {
+            add_label(label, (strcmp(opcode, ".data") == 0 || strcmp(opcode, ".string") == 0) ? DC : IC);
+        }
+
+        if (is_instruction(opcode) != -1) {
+            /* Handle special instructions */
+            if (strcmp(opcode, ".data") == 0) {
+                DC += count_data_elements(operands);
+            } else if (strcmp(opcode, ".string") == 0) {
+                DC += strlen(operands) - 2 + 1; /* -2 for quotes, +1 for null terminator */
+            } else if (strcmp(opcode, ".extern") == 0) {
+                add_external_label(operands);
+            }
+            /* No output for instructions in first pass */
+        } else if (is_opcode(opcode) != -1) {
+            /* Handle regular opcodes */
+            word = create_first_word(opcode, operands);
+            binary_repr = word_to_binary(word);
+            printf("%s\n", binary_repr);
+            free_binary(binary_repr);
+            IC += 1 + count_additional_words(opcode, operands);
+        } else if (opcode[0] != '\0') {
+            fprintf(stderr, "Error: Invalid opcode or instruction '%s'\n", opcode);
+        }
+        i++;
+    }
+}
+int count_additional_words(const char* opcode, const char* operands) {
+    int count = 0;
+    char* first_operand;
+    char* second_operand;
+    char operands_copy[MAX_OPERAND_LENGTH];
+
+    strcpy(operands_copy, operands);
+    first_operand = strtok(operands_copy, ",");
+    second_operand = strtok(NULL, ",");
+
+    if (first_operand != NULL) {
+        count++;
+    }
+    if (second_operand != NULL) {
+        count++;
+    }
+
+    return count;
+}
+
+int count_data_elements(const char* operands) {
+    int count = 0;
+    const char* ptr = operands;
+    
+    while (*ptr != '\0') {
+        /* Skip whitespace and commas */
+        while (*ptr == ' ' || *ptr == '\t' || *ptr == ',') {
+            ptr++;
+        }
+        
+        /* If we've reached a number, count it and move to the next */
+        if (*ptr == '-' || (*ptr >= '0' && *ptr <= '9')) {
+            count++;
+            /* Move past the number */
+            while (*ptr != ',' && *ptr != '\0') {
+                ptr++;
+            }
+        } else if (*ptr != '\0') {
+            /* If we're here, we've encountered an unexpected character */
+            fprintf(stderr, "Error: Invalid character in .data operands\n");
+            return -1;
+        }
+    }
+    
+    return count;
+}
+
+void add_external_label(const char* label) {
+    if (labels_count < MAX_LABELS) {
+        strncpy(labels_table[labels_count].name, label, MAX_LABEL_LEN - 1);
+        labels_table[labels_count].name[MAX_LABEL_LEN - 1] = '\0';
+        labels_table[labels_count].address = -1; /* Use -1 to indicate external labels */
+        labels_count++;
+    } else {
+        fprintf(stderr, "Error: Too many labels, can't add external label %s\n", label);
+    }
+}
 char** read_asm_file(const char* filename, int* num_lines) {
     FILE* file;
     char** lines = NULL;
@@ -273,12 +369,12 @@ unsigned int get_addressing_method(char* operand)
         return 1;
     }
     /* Register indirect addressing */
-    if (operand[0] == '*' && is_reg(operand + 1))
+    if (operand[0] == '*' && is_reg(operand + 1) != -1)
     {
         return 2;
     }
     /* Direct register addressing */
-    if (is_reg(operand))
+    if (is_reg(operand) != -1)
     {
         return 4;
     }
@@ -293,6 +389,23 @@ int is_opcode(char *str) {
     }
     for (i = 0; i < 16; i++) {  /* Iterate over the opcode table */
         if (strcmp(str, opcode_table[i].name) == 0) {
+            return i;  /* Return the index if a match is found */
+        }
+    }
+    return -1;  /* Return -1 if no match is found */
+}
+/* Function to check if a string is an instruction */
+/* Returns the index of the instruction if found, -1 otherwise */
+int is_instruction(char *str) {
+    const char *instructions[] = {".data", ".string", ".extern", ".entry"};
+    int num_instructions = sizeof(instructions) / sizeof(instructions[0]);
+    int i;
+
+    if (str == NULL) {
+        return -1;  /* Return -1 if the input string is NULL */
+    }
+    for (i = 0; i < num_instructions; i++) {
+        if (strcmp(str, instructions[i]) == 0) {
             return i;  /* Return the index if a match is found */
         }
     }
@@ -313,47 +426,66 @@ int is_reg(char *str) {
 }
 
 /* Function to create the first word of the binary code */
-unsigned int create_first_word( char* opcode, char* first_operand, char* second_operand)
+unsigned int create_first_word(char* opcode, char* operands)
 {
     unsigned int word = 0;
-    unsigned int op_code;
+    int op_code;
     unsigned int first_addressing = 0;
     unsigned int second_addressing = 0;
+    char* first_operand = NULL;
+    char* second_operand = NULL;
+    char* comma;
 
-    /* Get opcode (assuming is_opcode returns the numeric value of the opcode) */
+    /* Handle .data instruction */
+    if (strcmp(opcode, ".data") == 0) {
+        /* For .data, we don't create a first word */
+        return 0;
+    }
+
+    /* Get opcode */
     op_code = is_opcode(opcode);
+    if (op_code == -1) {
+        /* Handle error: invalid opcode */
+        fprintf(stderr, "Error: Invalid opcode '%s'\n", opcode);
+        return 0;
+    }
 
     /* Set opcode (bits 14-11) */
     word |= (op_code & 0xF) << 11;
 
+    /* Parse operands */
+    if (operands[0] != '\0') {
+        first_operand = operands;
+        comma = strchr(operands, ',');
+        if (comma != NULL) {
+            *comma = '\0';
+            second_operand = comma + 1;
+            trim(second_operand);
+        }
+        trim(first_operand);
+    }
+
     /* Handle addressing methods */
-    if (first_operand != NULL)
-    {
-        first_addressing = get_addressing_method(first_operand);
-        if (second_operand != NULL)
-        {
-            /* Two operand instruction */
-            second_addressing = get_addressing_method(second_operand);
-            /* Set source operand addressing method (bits 10-7) */
-            word |= (first_addressing & 0xF) << 7;
-            /* Set target operand addressing method (bits 6-3) */
-            word |= (second_addressing & 0xF) << 3;
-        }
-        else
-        {
-            /* Single operand instruction */
-            /* Set target operand addressing method (bits 6-3) */
-            word |= (first_addressing & 0xF) << 3;
-        }
+    first_addressing = get_addressing_method(first_operand);
+    second_addressing = get_addressing_method(second_operand);
+
+    if (first_addressing != 0 && second_addressing != 0) {
+        /* Two operand instruction */
+        word |= (first_addressing & 0xF) << 7;  /* Set source operand addressing method (bits 10-7) */
+        word |= (second_addressing & 0xF) << 3; /* Set target operand addressing method (bits 6-3) */
+    } else if (first_addressing != 0) {
+        /* Single operand instruction */
+        word |= (first_addressing & 0xF) << 3;  /* Set target operand addressing method (bits 6-3) */
     }
 
     /* Set ARE field (bits 2-0) */
-    word |= 0x4; /* 100 in binary */
+    /* For now, we'll set it to 100 (Absolute) for all non-data instructions */
+    word |= 0x4;
 
     return word;
 }
 
-char* word_to_binary(int word) {
+char* word_to_binary(unsigned int word) {
     char* binary;
     int i;
     unsigned int mask;
@@ -367,6 +499,9 @@ char* word_to_binary(int word) {
 
     /* Initialize the string with null terminator */
     binary[15] = '\0';
+
+    /* Ensure we're only using the lowest 15 bits */
+    word &= 0x7FFF;  /* 0x7FFF is 15 ones in binary */
 
     /* Convert to 15-bit binary representation */
     mask = 1 << 14;  /* Start with the 15th bit (remember, it's 0-indexed) */
@@ -382,30 +517,100 @@ char* word_to_binary(int word) {
 void free_binary(char* binary) {
     free(binary);
 }
-int main() {
-    char* binary_repr;
-    unsigned int first_word;
-    int num_lines;
-    char** asm_lines;
-    int i;
 
-    asm_lines = read_asm_file("output.asm", &num_lines);
-    execute_first_pass(asm_lines);
-    for (i = 0; i < labels_count; i++) {
-        printf("Label: %s, Address: %d\n", labels_table[i].name, labels_table[i].address);
+/* Function to trim whitespace from both ends of a string */
+void trim(char* str) {
+    char* end;
+    
+    /* Trim leading space */
+    while(isspace((unsigned char)*str)) str++;
+
+    if(*str == 0)  /* All spaces? */
+        return;
+
+    /* Trim trailing space */
+    end = str + strlen(str) - 1;
+    while(end > str && isspace((unsigned char)*end)) end--;
+
+    /* Write new null terminator */
+    *(end+1) = 0;
+}
+void parse_line(char* line, char* label, char* opcode, char* operands) {
+    char* token;
+    char line_copy[MAX_LINE_LENGTH];
+
+    /* Initialize output strings */
+    label[0] = '\0';
+    opcode[0] = '\0';
+    operands[0] = '\0';
+
+    /* Create a copy of the line to avoid modifying the original */
+    strncpy(line_copy, line, MAX_LINE_LENGTH - 1);
+    line_copy[MAX_LINE_LENGTH - 1] = '\0';
+
+    /* Check for label */
+    token = strtok(line_copy, " \t");
+    if (token != NULL && strchr(token, ':') != NULL) {
+        /* It's a label */
+        strncpy(label, token, MAX_LABEL_LEN - 1);
+        label[MAX_LABEL_LEN - 1] = '\0';
+        *strchr(label, ':') = '\0';  /* Remove the colon */
+        token = strtok(NULL, " \t");  /* Move to the next token */
     }
 
-    if (asm_lines != NULL) {
-        for (i = 0; asm_lines[i] != NULL; i++) {
-            printf("%s\n", asm_lines[i]);
+    /* Check for instruction or opcode */
+    if (token != NULL) {
+        strncpy(opcode, token, MAX_OPCODE_LENGTH - 1);
+        opcode[MAX_OPCODE_LENGTH - 1] = '\0';
+
+        /* Get the rest of the line as operands */
+        token = strtok(NULL, "\0");
+        if (token != NULL) {
+            strncpy(operands, token, MAX_OPERAND_LENGTH - 1);
+            operands[MAX_OPERAND_LENGTH - 1] = '\0';
+            trim(operands);
         }
-        free_lines(asm_lines);
     }
-    first_word = create_first_word("add", "r3", "#100");
-    binary_repr = word_to_binary(first_word);
-    if (binary_repr != NULL) {
-        printf("Binary representation: %s\n", binary_repr);
-        free_binary(binary_repr);
+}
+
+int* parse_data_operands(char* operands, int* count) {
+    char* token;
+    int* values = NULL;
+    int capacity = 10;  
+    int* temp;
+
+    *count = 0;
+
+    values = (int*)malloc(capacity * sizeof(int));
+    if (values == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return NULL;
     }
-    return 0;
+
+    token = strtok(operands, ",");
+    while (token != NULL) {
+        /* Skip leading whitespace */
+        while (isspace(*token)) token++;
+        
+        /* Check if we need to resize the array */
+        if (*count >= capacity) {
+            capacity *= 2;
+            temp = (int*)realloc(values, capacity * sizeof(int));
+            if (temp == NULL) {
+                fprintf(stderr, "Memory reallocation failed\n");
+                free(values);
+                return NULL;
+            }
+            values = temp;
+        }
+
+        /* Convert the token to an integer and add it to the array */
+        values[*count] = atoi(token);
+        (*count)++;
+
+        /* Get the next token */
+        token = strtok(NULL, ",");
+    }
+
+    return values;
 }
