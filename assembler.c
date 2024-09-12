@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "first_pass.h"
-#include "second_pass.h"
 #include "macro_handle.h"
 #include "assembler.h"
 

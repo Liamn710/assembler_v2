@@ -22,8 +22,10 @@ enum ARE {
 typedef struct {
     char name[MAX_LABEL_LEN];
     int address;
-    int is_entry;  
-    } label_entry;
+    int is_entry;
+    int is_data;    /* Flag for .data labels */
+    int is_string;  /* Flag for .string labels */
+} label_entry;
 extern struct opcode opcode_table[16];  /* Table of opcodes */
 extern char *instructions_table[];      /* List of assembler directives */
 extern char *registers[];               /* List of register names */
@@ -53,7 +55,7 @@ int is_empty_or_whitespace(const char* str);
 int count_data_elements(const char* operands);
 void add_external_label(const char* label);
 int count_additional_words(const char* opcode, const char* operands);
-void mark_label_as_entry(char* label);
+void mark_label_as_entry(const char* label_name);
 void add_external_reference(char* label, int address);
 int is_external_label(char* label);
 int get_register_number(const char* reg);
@@ -71,5 +73,9 @@ unsigned int get_memory_word(int address);
 int is_register(const char* str);
 unsigned int get_memory_word(int address);
 void store_word(unsigned int word);
-
+int parse_label_using_str(char* line, char* label);
+int calculate_data_cells(char* line);
+int calculate_string_cells(char* line);
+int calculate_opcode_cells(char* opcode);
+void add_label(char* label, int address, int is_data, int is_string);
 #endif

@@ -1,20 +1,18 @@
-.MAIN: add r3, LIST
+MAIN: add r3, LIST
+jsr fn1
 LOOP: prn #48
-.entry LOOP
-.extern LOOP
 lea STR, r6
 inc r6
-mov *r6,K
+mov *r6,L3
 sub r1, r4
-macr LIAM
-lea STR, r6
-inc r6
-endmacr
 cmp r3, #-6
 bne END
-dec K 
+add r7, *r6
+clr K
+sub L3, L3
 jmp LOOP
 END: stop
+.data -100
 STR: .string “abcd”
 LIST: .data 6, -9
 .data -100

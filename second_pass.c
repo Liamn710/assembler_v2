@@ -4,19 +4,15 @@
 #include "first_pass.h"
 
 void encode_operand(char* operand, int addressing_method, int* word_count) {
-    unsigned int word = 0;
     int value;
-    char* binary_repr;
 
     switch (addressing_method) {
         case 1: /* Immediate addressing */
             value = atoi(operand + 1); /* Skip the '#' */
-            word = (value & 0x3FFF) | (A << 14);
             break;
         case 2: /* Register indirect addressing */
             if (operand[0] == '*' && is_register(operand + 1)) {
                 value = get_register_number(operand + 1);
-                word = (value << 7) | (A << 14); /* Put register number in bits 7-9 */
             } else {
                 fprintf(stderr, "Error: Invalid register indirect addressing '%s'\n", operand);
                 return;
@@ -25,7 +21,6 @@ void encode_operand(char* operand, int addressing_method, int* word_count) {
         case 4: /* Direct register addressing */
             if (is_register(operand)) {
                 value = get_register_number(operand);
-                word = (value << 7) | (A << 14); /* Put register number in bits 7-9 */
             } else {
                 fprintf(stderr, "Error: Invalid register '%s'\n", operand);
                 return;
@@ -35,9 +30,9 @@ void encode_operand(char* operand, int addressing_method, int* word_count) {
             remove_spaces(operand);
             value = get_label_address(operand);
             if (value != -1) {
-                word = (value & 0x3FFF) | (R << 14);
+
             } else if (is_external_label(operand)) {
-                word = (E << 14); /* Address will be filled by the linker */
+
                 add_external_reference(operand, IC + *word_count);
             } else {
                 fprintf(stderr, "Error: Undefined label '%s'\n", operand);
@@ -49,9 +44,6 @@ void encode_operand(char* operand, int addressing_method, int* word_count) {
             return;
     }
 
-    binary_repr = word_to_binary(word);
-    printf("%s\n", binary_repr);
-    free_binary(binary_repr);
     (*word_count)++;
 }
 int is_register(const char* str) {
@@ -164,10 +156,16 @@ void add_external_reference(char* label, int address) {
     /* Implement this function to add external references for the linker */
     printf("External reference: %s at address %d\n", label, address);
 }
-
-void mark_label_as_entry(char* label) {
-    /* Implement this function to mark labels as entry points */
-    printf("Entry point: %s\n", label);
+void mark_label_as_entry(const char* label_name) {
+    int i;
+    for (i = 0; i < labels_count; i++) {
+        if (strcmp(labels_table[i].name, label_name) == 0) {
+            labels_table[i].is_entry = 1;
+            printf("Marked label '%s' as entry\n", label_name);
+            return;
+        }
+    }
+    fprintf(stderr, "Error: Label '%s' not found for .entry directive\n", label_name);
 }
 
 void generate_ob_file(const char* filename) {
@@ -209,7 +207,7 @@ void generate_externals_file(const char* filename) {
             /* You need to implement a way to track where this external label is used */
             /* This might involve creating a separate structure during the second pass */
             /* For now, we'll just print the label name without an address */
-            fprintf(file, "%s\n", labels_table[i].name);
+            fprintf(file, "%s\t %d\n", labels_table[i].name,labels_table[i].address);
         }
     }
 
@@ -232,6 +230,7 @@ unsigned int get_memory_word(int address) {
 void generate_entries_file(const char* filename) {
     FILE* file;
     int i;
+    int entries_count = 0;
 
     file = fopen(filename, "w");
     if (file == NULL) {
@@ -240,12 +239,21 @@ void generate_entries_file(const char* filename) {
     }
 
     for (i = 0; i < labels_count; i++) {
-        if (labels_table[i].is_entry) {
+        /* Check if the label is associated with .data or .string */
+        if (labels_table[i].is_data || labels_table[i].is_string) {
             fprintf(file, "%s %04d\n", labels_table[i].name, labels_table[i].address);
+            entries_count++;
         }
     }
 
     fclose(file);
+
+    if (entries_count == 0) {
+        fprintf(stderr, "No data or string labels found. Deleting empty file %s\n", filename);
+        remove(filename);
+    } else {
+        printf("Created entries file %s with %d entries\n", filename, entries_count);
+    }
 }
 
 int has_extern_instructions() {

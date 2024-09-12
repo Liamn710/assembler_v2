@@ -30,15 +30,15 @@ int DC = 0;
 
 
 
-void add_label(char* label, int address) {
+void add_label(char* label, int address, int is_data, int is_string) {
     if (labels_count >= MAX_LABELS) {
-        fprintf(stderr, "Error: Too many labels\n");
+        printf("Error: Too many labels\n"); /* todo - error handling */
         return;
     }
-    strncpy(labels_table[labels_count].name, label, MAX_LABEL_LEN - 1);
-    labels_table[labels_count].name[MAX_LABEL_LEN - 1] = '\0';
+    strcpy(labels_table[labels_count].name, label);
     labels_table[labels_count].address = address;
-    labels_table[labels_count].is_entry = 0;  /* Initialize is_entry to 0 */
+    labels_table[labels_count].is_data = is_data;
+    labels_table[labels_count].is_string = is_string;
     labels_count++;
 }
 
@@ -59,48 +59,6 @@ int parse_label_using_str(char* line, char* label) {
     return 0;
 }
 
-int calculate_data_cells(char* line) {
-    int i = 0;
-    int cells = 0;
-    
-    while (line[i] != '\0') {
-        while (isspace(line[i]) || line[i] == ',') {
-            i++;
-        }
-        if (line[i] == '-' || isdigit(line[i])) {
-            cells++;
-
-            while (line[i] != '\0' && line[i] != ',' && !isspace(line[i])) {
-                i++;
-            }
-        }
-    }
-
-    return cells;
-}
-
-int calculate_string_cells(char* line) {
-    int i = 0;
-    int cells = 0;
-    int in_string = 0;
-
-    while (line[i] != '\0') {
-        if (line[i] == '"') {
-            if (in_string) {
-                in_string = 0;
-                cells++;
-                break;
-            } else {
-                in_string = 1;
-            }
-        } else if (in_string) {
-            cells++;
-        }
-        i++;
-    }
-
-    return cells;
-}
 
 int get_num_of_cells_from_opcode(char *opcode_name) {
     int i;
@@ -114,41 +72,26 @@ int get_num_of_cells_from_opcode(char *opcode_name) {
     return 0;
 }
 
-int calculate_opcode_cells(char* opcode) {
-    char* operands_start = strchr(opcode, ' ');
-    char opcode_name[10] = {0};
-
-    if (operands_start) {
-        strncpy(opcode_name, opcode, operands_start - opcode);
-        return get_num_of_cells_from_opcode(opcode_name);
-    }
-
-    return 1;
-}
-
 void process_line(char* line) {
     char label[MAX_LABEL_LEN + 1] = {0};
+    char* instruction;
     
     if (parse_label_using_str(line, label)) {
-        char* opcode_start = strstr(line, ":") + 1;
-        while (isspace(*opcode_start)) {
-            opcode_start++;
-        }
+        instruction = strstr(line, ":") + 1;
+        while (isspace(*instruction)) instruction++;
 
-        if (strncmp(opcode_start, ".data", 5) == 0) {
-            int cells_needed = calculate_data_cells(opcode_start + 5);
-            add_label(label, IC + DC);
-            DC += cells_needed;
-        } else if (strncmp(opcode_start, ".string", 7) == 0) {
-            int cells_needed = calculate_string_cells(opcode_start + 7);
-            add_label(label, IC + DC);
-            DC += cells_needed;
+        if (strncmp(instruction, ".data", 5) == 0) {
+            add_label(label, DC, 1, 0);  /* is_data = 1, is_string = 0 */
+            DC += calculate_data_cells(instruction + 5);
+        } else if (strncmp(instruction, ".string", 7) == 0) {
+            add_label(label, DC, 0, 1);  /* is_data = 0, is_string = 1 */
+            DC += calculate_string_cells(instruction + 7);
         } else {
-            int cells_needed = calculate_opcode_cells(opcode_start);
-            add_label(label, IC);
-            IC += cells_needed;
+            add_label(label, IC, 0, 0);  /* Regular label */
+            IC += calculate_opcode_cells(instruction);
         }
     } else {
+        /* Process line without label */
         if (strncmp(line, ".data", 5) == 0) {
             DC += calculate_data_cells(line + 5);
         } else if (strncmp(line, ".string", 7) == 0) {
@@ -169,7 +112,31 @@ int is_empty_or_whitespace(const char* str) {
     return 1;  /* String is empty or contains only whitespace */
 }
 
+int calculate_data_cells(char* line) {
+    int cells = 0;
+    char* token = strtok(line, " ,\t");
+    while (token != NULL) {
+        cells++;
+        token = strtok(NULL, " ,\t");
+    }
+    return cells;
+}
 
+int calculate_string_cells(char* line) {
+    int cells = 0;
+    char* start = strchr(line, '"');
+    char* end = strrchr(line, '"');
+    if (start && end && start != end) {
+        cells = end - start - 1 + 1;  /* -1 to exclude quotes, +1 for null terminator */
+    }
+    return cells;
+}
+
+int calculate_opcode_cells(char* opcode) {
+    /* This function should return the number of words used by the opcode */
+    /* You might need to implement a more sophisticated logic based on your instruction set */
+    return 1;  /* Assuming each opcode uses at least one word */
+}
 void execute_first_pass(char **lines) {
     char label[MAX_LABEL_LEN];
     char opcode[MAX_OPCODE_LENGTH];
@@ -187,9 +154,10 @@ void execute_first_pass(char **lines) {
         parse_line(lines[i], label, opcode, operands);
         
         if (label[0] != '\0') {
-            add_label(label, (strcmp(opcode, ".data") == 0 || strcmp(opcode, ".string") == 0) ? DC : IC);
-        }
-
+        int is_data = strcmp(opcode, ".data") == 0;
+        int is_string = strcmp(opcode, ".string") == 0;
+        add_label(label, (is_data || is_string) ? DC : IC, is_data, is_string);
+    }
         if (is_instruction(opcode) != -1) {
             /* Handle special instructions */
             if (strcmp(opcode, ".data") == 0) {
@@ -204,7 +172,6 @@ void execute_first_pass(char **lines) {
             /* Handle regular opcodes */
             word = create_first_word(opcode, operands);
             binary_repr = word_to_binary(word);
-            printf("%s\n", binary_repr);
             free_binary(binary_repr);
             IC += 1 + count_additional_words(opcode, operands);
         } else if (opcode[0] != '\0') {
